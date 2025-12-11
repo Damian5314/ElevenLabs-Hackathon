@@ -11,7 +11,8 @@
       "Bash(npm run build:*)",
       "Bash(tree:*)",
       "Bash(npm install lucide-react)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
