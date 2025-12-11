@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech Meetup 2024 - Inschrijving</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .logo-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      color: #333;
+      font-size: 24px;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #666;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .event-info {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 25px;
+      text-align: center;
+    }
+
+    .event-info p {
+      color: #555;
+      margin: 5px 0;
+    }
+
+    .event-info strong {
+      color: #f5576c;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      color: #333;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e1e1e1;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #f5576c;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(245, 87, 108, 0.4);
+    }
+
+    #confirmation {
+      display: none;
+      background: #d4edda;
+      border: 2px solid #28a745;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      color: #155724;
+      margin-top: 20px;
+    }
+
+    #confirmation.show {
+      display: block;
+      animation: fadeIn 0.5s ease;
+    }
+
+    #confirmation .icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .form-container.hidden {
+      display: none;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .checkbox-group input {
+      width: auto;
+    }
+
+    .checkbox-group label {
+      margin-bottom: 0;
+      font-weight: normal;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <div class="logo-icon"><‰</div>
+      <h1>Tech Meetup 2024</h1>
+      <p class="subtitle">Schrijf je nu in!</p>
+    </div>
+
+    <div class="event-info">
+      <p><strong>=Å Datum:</strong> 15 januari 2025</p>
+      <p><strong>=Í Locatie:</strong> Innovation Hub, Amsterdam</p>
+      <p><strong>ð Tijd:</strong> 18:00 - 22:00</p>
+    </div>
+
+    <form id="event-form" class="form-container">
+      <div class="form-group">
+        <label for="name">Naam</label>
+        <input type="text" id="name" name="name" placeholder="Uw volledige naam" required>
+      </div>
+
+      <div class="form-group">
+        <label for="email">E-mailadres</label>
+        <input type="email" id="email" name="email" placeholder="uw@email.nl" required>
+      </div>
+
+      <div class="form-group">
+        <label for="company">Bedrijf (optioneel)</label>
+        <input type="text" id="company" name="company" placeholder="Uw bedrijfsnaam">
+      </div>
+
+      <div class="form-group">
+        <label for="dietary">Dieetwensen</label>
+        <select id="dietary" name="dietary">
+          <option value="none">Geen bijzonderheden</option>
+          <option value="vegetarian">Vegetarisch</option>
+          <option value="vegan">Veganistisch</option>
+          <option value="gluten-free">Glutenvrij</option>
+        </select>
+      </div>
+
+      <button type="submit" id="submit">Inschrijven</button>
+    </form>
+
+    <div id="confirmation">
+      <div class="icon"><Š</div>
+      <h2>Inschrijving ontvangen!</h2>
+      <p id="confirmation-text"></p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('event-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+
+      // Show confirmation
+      document.getElementById('event-form').classList.add('hidden');
+      document.getElementById('confirmation').classList.add('show');
+      document.getElementById('confirmation-text').textContent =
+        `Bedankt ${name}! Je inschrijving voor Tech Meetup 2024 is bevestigd. Een bevestigingsmail is verzonden naar ${email}. We zien je op 15 januari!`;
+    });
+  </script>
+</body>
+</html>

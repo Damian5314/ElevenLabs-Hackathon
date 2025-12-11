@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /mnt/c/Users/Wish/Downloads/github-repo/Hackathons/ElevenLabs/lifeadmin-voice-agent submodule status)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(git -C /mnt/c/Users/Wish/Downloads/github-repo/hackathons/ElevenLabs/lifeadmin-voice-agent submodule status)"
+    ]
+  }
+}

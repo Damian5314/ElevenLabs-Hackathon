@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tandartspraktijk De Witte Tand - Afspraak maken</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .logo-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      color: #333;
+      font-size: 24px;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #666;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      color: #333;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e1e1e1;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    #confirmation {
+      display: none;
+      background: #d4edda;
+      border: 2px solid #28a745;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      color: #155724;
+      margin-top: 20px;
+    }
+
+    #confirmation.show {
+      display: block;
+      animation: fadeIn 0.5s ease;
+    }
+
+    #confirmation .icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .form-container.hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <div class="logo-icon">>·</div>
+      <h1>Tandartspraktijk De Witte Tand</h1>
+      <p class="subtitle">Maak online een afspraak</p>
+    </div>
+
+    <form id="appointment-form" class="form-container">
+      <div class="form-group">
+        <label for="name">Naam</label>
+        <input type="text" id="name" name="name" placeholder="Uw volledige naam" required>
+      </div>
+
+      <div class="form-group">
+        <label for="email">E-mailadres</label>
+        <input type="email" id="email" name="email" placeholder="uw@email.nl" required>
+      </div>
+
+      <div class="form-group">
+        <label for="phone">Telefoonnummer</label>
+        <input type="tel" id="phone" name="phone" placeholder="06-12345678" required>
+      </div>
+
+      <div class="form-group">
+        <label for="datetime">Gewenste datum en tijd</label>
+        <input type="datetime-local" id="datetime" name="datetime" required>
+      </div>
+
+      <button type="submit" id="submit">Afspraak maken</button>
+    </form>
+
+    <div id="confirmation">
+      <div class="icon"></div>
+      <h2>Afspraak bevestigd!</h2>
+      <p id="confirmation-text"></p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('appointment-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+      const datetime = document.getElementById('datetime').value;
+
+      // Format the datetime nicely
+      const date = new Date(datetime);
+      const options = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      };
+      const formattedDate = date.toLocaleDateString('nl-NL', options);
+
+      // Show confirmation
+      document.getElementById('appointment-form').classList.add('hidden');
+      document.getElementById('confirmation').classList.add('show');
+      document.getElementById('confirmation-text').textContent =
+        `Beste ${name}, uw afspraak is bevestigd voor ${formattedDate}. Een bevestiging is verzonden naar ${email}.`;
+    });
+
+    // Set default datetime to tomorrow at 10:00
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(10, 0, 0, 0);
+    document.getElementById('datetime').value = tomorrow.toISOString().slice(0, 16);
+  </script>
+</body>
+</html>
