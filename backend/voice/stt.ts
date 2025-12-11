@@ -38,6 +38,7 @@ async function transcribeWithWhisper(audioBuffer: Buffer): Promise<string> {
   });
 
   try {
+    console.log("[STT] Calling OpenAI Whisper API...");
     const transcription = await openai.audio.transcriptions.create({
       file: audioFile,
       model: "whisper-1",
@@ -45,8 +46,10 @@ async function transcribeWithWhisper(audioBuffer: Buffer): Promise<string> {
       response_format: "text",
     });
 
+    console.log("[STT] Transcription successful:", transcription);
     return transcription.trim();
   } catch (error) {
+    console.error("[STT] Error details:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     throw new STTError(`Transcription failed: ${message}`, "whisper");
   }
@@ -82,7 +85,7 @@ async function transcribeWithElevenLabs(audioBuffer: Buffer): Promise<string> {
       );
     }
 
-    const data = (await response.json()) as { text?: string };
+    const data = (await response.json()) as { text?: string } as { text?: string };
     return data.text?.trim() || "";
   } catch (error) {
     if (error instanceof STTError) throw error;

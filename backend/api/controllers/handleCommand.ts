@@ -1,11 +1,12 @@
 /**
  * Handle Command Controller
  *
- * Main orchestrator for voice commands:
+ * Main orchestrator for voice commands with conversation support:
  * 1. STT: Audio -> Text
- * 2. Intent: Text -> Intent JSON
- * 3. Execute: Run Playwright task or create workflow
- * 4. TTS: Generate audio response
+ * 2. Intent: Text -> Intent JSON (conversation or action)
+ * 3. Handle: Respond conversationally OR request confirmation for actions
+ * 4. Execute: Only run tasks after confirmation
+ * 5. TTS: Generate audio response
  */
 
 import {
@@ -16,8 +17,74 @@ import {
 } from "../../voice";
 import { runTask } from "../services/executor";
 import { buildMessage } from "../services/agentReply";
-import { createWorkflow, updateWorkflowLastRun } from "../services/database";
-import { CommandResponse, Intent } from "../types";
+import { createWorkflow } from "../services/database";
+import { CommandResponse, PendingAction, ExecutionResult } from "../types";
+import { IntentTask } from "../../voice";
+
+// In-memory store for pending actions (in production, use Redis/DB)
+const pendingActions: Map<string, PendingAction> = new Map();
+
+// Clean up expired pending actions every minute
+setInterval(() => {
+  const now = new Date().toISOString();
+  for (const [id, action] of pendingActions.entries()) {
+    if (action.expiresAt < now) {
+      pendingActions.delete(id);
+      console.log(`[PendingActions] Expired: ${id}`);
+    }
+  }
+}, 60000);
+
+/**
+ * Generate a unique ID for pending actions
+ */
+function generateActionId(): string {
+  return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Create a pending action that waits for confirmation
+ */
+function createPendingAction(task: IntentTask): PendingAction {
+  const id = generateActionId();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes expiry
+
+  const pendingAction: PendingAction = {
+    id,
+    task,
+    createdAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+  };
+
+  pendingActions.set(id, pendingAction);
+  console.log(`[PendingActions] Created: ${id}`, task);
+
+  return pendingAction;
+}
+
+/**
+ * Get and remove a pending action
+ */
+function consumePendingAction(): PendingAction | null {
+  // Get the most recent pending action
+  const entries = Array.from(pendingActions.entries());
+  if (entries.length === 0) return null;
+
+  const [id, action] = entries[entries.length - 1];
+  pendingActions.delete(id);
+  console.log(`[PendingActions] Consumed: ${id}`);
+
+  return action;
+}
+
+/**
+ * Clear all pending actions
+ */
+function clearPendingActions(): void {
+  pendingActions.clear();
+  console.log(`[PendingActions] Cleared all`);
+}
 
 /**
  * Process a voice command from audio input
@@ -29,42 +96,41 @@ export async function handleAudioCommand(
 
   try {
     // Step 1: Speech-to-Text
-    actionsLog.push("STT: Transcriberen van audio...");
+    actionsLog.push("[STT] Transcriberen van audio...");
     const userTranscript = await transcribeAudio(audioBuffer);
-    actionsLog.push(`STT voltooid: "${userTranscript}"`);
+    actionsLog.push(`[STT] Voltooid: "${userTranscript}"`);
 
     // Step 2: Extract Intent
-    actionsLog.push("Intent: Analyseren van opdracht...");
+    actionsLog.push("[Intent] Analyseren van opdracht...");
     const intent = await extractIntent(userTranscript);
-    actionsLog.push(`Intent: ${intent.type} -> ${intent.task.target_url}`);
+    actionsLog.push(`[Intent] Type: ${intent.type}`);
 
-    // Step 3: Execute based on intent type
-    const executionResult = await executeIntent(intent, actionsLog);
+    // Step 3: Handle based on intent type
+    const result = await handleIntent(intent, actionsLog);
 
-    // Step 4: Build agent response message
-    const agentMessage = buildMessage(userTranscript, intent, executionResult);
-    actionsLog.push(`Agent: "${agentMessage.substring(0, 50)}..."`);
-
-    // Step 5: Generate TTS audio
-    actionsLog.push("TTS: Genereren van spraak...");
-    const audioResponseBuffer = await generateSpeech(agentMessage);
+    // Step 4: Generate TTS audio
+    actionsLog.push("[TTS] Genereren van spraak...");
+    const audioResponseBuffer = await generateSpeech(result.agentMessage);
     const audioBase64 = audioBufferToBase64(audioResponseBuffer);
-    actionsLog.push("TTS voltooid");
+    actionsLog.push("[TTS] Voltooid");
 
     return {
       userTranscript,
       intent,
-      agentMessage,
+      agentMessage: result.agentMessage,
       actionsLog,
       audio: audioBase64,
+      pendingAction: result.pendingAction,
+      actionExecuted: result.actionExecuted,
+      executionResult: result.executionResult,
     };
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    actionsLog.push(`Fout: ${errorMessage}`);
+    actionsLog.push(`[ERROR] ${errorMessage}`);
 
     // Generate error response with TTS
-    const errorAgentMessage = `Er ging iets mis bij het verwerken van je opdracht. ${errorMessage}`;
+    const errorAgentMessage = `Er ging iets mis bij het verwerken van je bericht. Kun je dat nog een keer proberen?`;
 
     let audioBase64 = "";
     try {
@@ -77,8 +143,8 @@ export async function handleAudioCommand(
     return {
       userTranscript: "",
       intent: {
-        type: "book_appointment",
-        task: { kind: "booking", target_url: "unknown" },
+        type: "conversation",
+        response: errorAgentMessage,
       },
       agentMessage: errorAgentMessage,
       actionsLog,
@@ -96,37 +162,36 @@ export async function handleTextCommand(
   const actionsLog: string[] = [];
 
   try {
-    actionsLog.push(`Direct tekst input: "${text}"`);
+    actionsLog.push(`[Input] Direct tekst: "${text}"`);
 
     // Skip STT, go straight to intent extraction
-    actionsLog.push("Intent: Analyseren van opdracht...");
+    actionsLog.push("[Intent] Analyseren van opdracht...");
     const intent = await extractIntent(text);
-    actionsLog.push(`Intent: ${intent.type} -> ${intent.task.target_url}`);
+    actionsLog.push(`[Intent] Type: ${intent.type}`);
 
-    // Execute based on intent type
-    const executionResult = await executeIntent(intent, actionsLog);
-
-    // Build agent response message
-    const agentMessage = buildMessage(text, intent, executionResult);
-    actionsLog.push(`Agent: "${agentMessage.substring(0, 50)}..."`);
+    // Handle based on intent type
+    const result = await handleIntent(intent, actionsLog);
 
     // Generate TTS audio
-    actionsLog.push("TTS: Genereren van spraak...");
-    const audioResponseBuffer = await generateSpeech(agentMessage);
+    actionsLog.push("[TTS] Genereren van spraak...");
+    const audioResponseBuffer = await generateSpeech(result.agentMessage);
     const audioBase64 = audioBufferToBase64(audioResponseBuffer);
-    actionsLog.push("TTS voltooid");
+    actionsLog.push("[TTS] Voltooid");
 
     return {
       userTranscript: text,
       intent,
-      agentMessage,
+      agentMessage: result.agentMessage,
       actionsLog,
       audio: audioBase64,
+      pendingAction: result.pendingAction,
+      actionExecuted: result.actionExecuted,
+      executionResult: result.executionResult,
     };
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    actionsLog.push(`Fout: ${errorMessage}`);
+    actionsLog.push(`[ERROR] ${errorMessage}`);
 
     const errorAgentMessage = `Er ging iets mis: ${errorMessage}`;
 
@@ -141,8 +206,8 @@ export async function handleTextCommand(
     return {
       userTranscript: text,
       intent: {
-        type: "book_appointment",
-        task: { kind: "booking", target_url: "unknown" },
+        type: "conversation",
+        response: errorAgentMessage,
       },
       agentMessage: errorAgentMessage,
       actionsLog,
@@ -152,67 +217,182 @@ export async function handleTextCommand(
 }
 
 /**
- * Execute the intent - either run task directly or create workflow
+ * Handle intent - main logic for conversation vs action flow
  */
-async function executeIntent(
-  intent: Intent,
+interface HandleIntentResult {
+  agentMessage: string;
+  pendingAction?: PendingAction;
+  actionExecuted?: boolean;
+  executionResult?: ExecutionResult;
+}
+
+async function handleIntent(
+  intent: Awaited<ReturnType<typeof extractIntent>>,
   actionsLog: string[]
-): Promise<{ success: boolean; message: string; confirmationText?: string; error?: string }> {
-  const { type, task } = intent;
+): Promise<HandleIntentResult> {
+  const { type } = intent;
 
   switch (type) {
-    case "book_appointment":
-    case "fill_form_once":
-      // Execute immediately via Playwright
-      actionsLog.push(`Playwright: Uitvoeren van ${task.kind}...`);
-      const result = await runTask(task);
+    case "conversation":
+      // Just respond with the conversational message
+      actionsLog.push("[Chat] Conversatie response");
+      return {
+        agentMessage: intent.response || "Ik begrijp je niet helemaal. Kun je dat anders formuleren?",
+      };
 
-      if (result.success) {
-        actionsLog.push(`Taak voltooid: ${result.confirmationText}`);
-      } else {
-        actionsLog.push(`Taak mislukt: ${result.error}`);
+    case "action_request":
+      // User wants to do something - ask for confirmation
+      if (!intent.task) {
+        return {
+          agentMessage: "Ik begrijp wat je wilt doen, maar ik mis wat details. Kun je specifieker zijn?",
+        };
       }
 
-      return result;
+      actionsLog.push(`[Action] Actie gevraagd: ${intent.task.kind} -> ${intent.task.target_url}`);
 
-    case "create_recurring_task":
-      // Create workflow in database
-      actionsLog.push(`Workflow aanmaken: ${task.label || task.target_url}`);
+      // Create pending action and ask for confirmation
+      const pendingAction = createPendingAction(intent.task);
+      const confirmMessage = buildConfirmationMessage(intent.task);
 
-      const workflow = createWorkflow({
-        type: task.kind,
-        target_url: task.target_url,
-        interval: task.interval || "P3M",
-        label: task.label,
-        use_profile: task.use_profile,
-      });
-
-      actionsLog.push(`Workflow opgeslagen met ID: ${workflow.id}`);
-
-      // Also execute the task immediately for demo purposes
-      actionsLog.push("Eerste uitvoering starten...");
-      const firstRunResult = await runTask(task);
-
-      if (firstRunResult.success) {
-        actionsLog.push("Eerste uitvoering voltooid");
-        // Update last_run to prevent duplicate execution by scheduler
-        updateWorkflowLastRun(workflow.id);
-      } else {
-        actionsLog.push("Eerste uitvoering mislukt, workflow is wel aangemaakt");
-      }
+      actionsLog.push("[Action] Wacht op bevestiging...");
 
       return {
-        success: true,
-        message: "Workflow created and first run completed",
-        confirmationText: firstRunResult.confirmationText,
+        agentMessage: confirmMessage,
+        pendingAction,
+      };
+
+    case "confirm_action":
+      // User confirmed - execute the pending action
+      const actionToExecute = consumePendingAction();
+
+      if (!actionToExecute) {
+        actionsLog.push("[Action] Geen actie om te bevestigen");
+        return {
+          agentMessage: "Er is geen actie om te bevestigen. Wat wil je dat ik doe?",
+        };
+      }
+
+      actionsLog.push(`[Action] Bevestigd! Uitvoeren: ${actionToExecute.task.kind}`);
+      const executionResult = await executeTask(actionToExecute.task, actionsLog);
+      const resultMessage = buildMessage("", { type: "action_request", task: actionToExecute.task }, executionResult);
+
+      return {
+        agentMessage: resultMessage,
+        actionExecuted: true,
+        executionResult,
+      };
+
+    case "cancel_action":
+      // User cancelled - clear pending action
+      clearPendingActions();
+      actionsLog.push("[Action] Geannuleerd door gebruiker");
+
+      return {
+        agentMessage: intent.response || "Geen probleem, ik heb de actie geannuleerd. Kan ik je ergens anders mee helpen?",
       };
 
     default:
-      actionsLog.push(`Onbekend intent type: ${type}`);
       return {
-        success: false,
-        message: "Unknown intent type",
-        error: `Unknown intent type: ${type}`,
+        agentMessage: "Ik begrijp je niet helemaal. Kun je dat anders formuleren?",
       };
   }
+}
+
+/**
+ * Build a confirmation message for an action
+ */
+function buildConfirmationMessage(task: IntentTask): string {
+  const targetName = task.target_url === "tandarts" ? "tandarts" : "evenement";
+
+  if (task.recurring) {
+    const intervalText = intervalToHuman(task.interval || "P3M");
+    return `Ik ga een terugkerende taak instellen om ${intervalText} een ${targetName} afspraak te boeken. Wil je dat ik dit doe? Zeg "ja" om te bevestigen of "nee" om te annuleren.`;
+  }
+
+  if (task.kind === "booking") {
+    const timeText = task.datetime_preference
+      ? ` voor ${task.datetime_preference}`
+      : "";
+    return `Ik ga een ${targetName} afspraak${timeText} voor je boeken met je opgeslagen gegevens. Wil je dat ik dit doe? Zeg "ja" om te bevestigen of "nee" om te annuleren.`;
+  }
+
+  if (task.kind === "form_fill") {
+    return `Ik ga het ${targetName} formulier voor je invullen met je opgeslagen gegevens. Wil je dat ik dit doe? Zeg "ja" om te bevestigen of "nee" om te annuleren.`;
+  }
+
+  return `Ik ga deze actie uitvoeren. Zeg "ja" om te bevestigen of "nee" om te annuleren.`;
+}
+
+/**
+ * Execute the task - booking, form fill, or create workflow
+ */
+async function executeTask(
+  task: IntentTask,
+  actionsLog: string[]
+): Promise<ExecutionResult> {
+  // Check if it's a recurring task
+  if (task.recurring && task.interval) {
+    // Create workflow in database
+    actionsLog.push(`[Workflow] Aanmaken: ${task.label || task.target_url}`);
+
+    const workflow = createWorkflow({
+      type: task.kind,
+      target_url: task.target_url,
+      interval: task.interval,
+      label: task.label,
+      use_profile: task.use_profile,
+    });
+
+    actionsLog.push(`[Workflow] Opgeslagen met ID: ${workflow.id}`);
+
+    // Execute first run
+    actionsLog.push("[Playwright] Eerste uitvoering starten...");
+    const firstRunResult = await runTask(task);
+
+    if (firstRunResult.success) {
+      actionsLog.push("[Playwright] Eerste uitvoering voltooid");
+    } else {
+      actionsLog.push("[Playwright] Eerste uitvoering mislukt, workflow is wel aangemaakt");
+    }
+
+    return {
+      success: true,
+      message: "Workflow created and first run completed",
+      confirmationText: firstRunResult.confirmationText,
+    };
+  }
+
+  // Regular one-time task
+  actionsLog.push(`[Playwright] Uitvoeren van ${task.kind}...`);
+  const result = await runTask(task);
+
+  if (result.success) {
+    actionsLog.push(`[Playwright] Voltooid: ${result.confirmationText}`);
+  } else {
+    actionsLog.push(`[Playwright] Mislukt: ${result.error}`);
+  }
+
+  return {
+    success: result.success,
+    message: result.success ? "Task completed" : result.error || "Failed",
+    confirmationText: result.confirmationText,
+    error: result.error,
+  };
+}
+
+/**
+ * Convert ISO 8601 duration to human-readable Dutch text
+ */
+function intervalToHuman(interval: string): string {
+  const mapping: { [key: string]: string } = {
+    P1D: "dagelijks",
+    P1W: "wekelijks",
+    P2W: "tweewekelijks",
+    P1M: "maandelijks",
+    P3M: "elk kwartaal",
+    P6M: "halfjaarlijks",
+    P1Y: "jaarlijks",
+  };
+
+  return mapping[interval.toUpperCase()] || interval;
 }

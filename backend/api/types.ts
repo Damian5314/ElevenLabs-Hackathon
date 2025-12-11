@@ -9,6 +9,7 @@ export interface Profile {
   name: string;
   email: string;
   phone: string;
+  gender?: string;
 }
 
 // ----- Workflow Types -----
@@ -31,6 +32,14 @@ export interface ExecutionResult {
   error?: string;
 }
 
+// ----- Pending Action Types -----
+export interface PendingAction {
+  id: string;
+  task: IntentTask;
+  createdAt: string;
+  expiresAt: string;
+}
+
 // ----- API Request/Response Types -----
 export interface CommandRequest {
   audio?: Buffer;
@@ -43,6 +52,10 @@ export interface CommandResponse {
   agentMessage: string;
   actionsLog: string[];
   audio: string; // base64 encoded audio
+  // New fields for conversation flow
+  pendingAction?: PendingAction; // Action waiting for confirmation
+  actionExecuted?: boolean; // Whether an action was executed
+  executionResult?: ExecutionResult; // Result of executed action
 }
 
 export interface CheckWorkflowsResponse {

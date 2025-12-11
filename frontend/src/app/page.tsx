@@ -1,23 +1,53 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Trash2, RotateCcw } from 'lucide-react';
 import MicButton from '@/components/MicButton';
-import TranscriptPanel from '@/components/TranscriptPanel';
 import ActionLog from '@/components/ActionLog';
 import { startRecording, stopRecording, playAudioFromResponse } from '@/services/audio';
 import { sendAudio } from '@/services/api';
-import { RecordingState } from '@/types';
+import { RecordingState, PendingAction, ExecutionResult } from '@/types';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  pendingAction?: PendingAction;
+  actionExecuted?: boolean;
+  executionResult?: ExecutionResult;
+}
 
 export default function Home() {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
-  const [userTranscript, setUserTranscript] = useState('');
-  const [agentMessage, setAgentMessage] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const addLog = useCallback((message: string) => {
     setLogs((prev) => [...prev, message]);
+  }, []);
+
+  const addMessage = useCallback((role: 'user' | 'assistant', content: string, extra?: {
+    pendingAction?: PendingAction;
+    actionExecuted?: boolean;
+    executionResult?: ExecutionResult;
+  }) => {
+    const newMessage: Message = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      role,
+      content,
+      timestamp: new Date(),
+      ...extra,
+    };
+    setMessages((prev) => [...prev, newMessage]);
   }, []);
 
   const handleStartRecording = useCallback(async () => {
@@ -25,7 +55,7 @@ export default function Home() {
       setError(null);
       await startRecording();
       setRecordingState('recording');
-      addLog('🎤 Opname gestart');
+      addLog('Opname gestart');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kon opname niet starten');
       setRecordingState('idle');
@@ -35,30 +65,56 @@ export default function Home() {
   const handleStopRecording = useCallback(async () => {
     try {
       setRecordingState('processing');
-      addLog('⏹️ Opname gestopt, verwerken...');
+      addLog('Opname gestopt, verwerken...');
 
       const audioBlob = await stopRecording();
-      addLog('📤 Audio verzenden naar server...');
+      addLog('Audio verzenden naar server...');
 
       const response = await sendAudio(audioBlob);
 
-      // Update UI with response
-      setUserTranscript(response.userTranscript);
-      setAgentMessage(response.agentMessage);
+      // Add user message
+      if (response.userTranscript) {
+        addMessage('user', response.userTranscript);
+      }
 
       // Add all action logs from backend
       if (response.actionsLog && response.actionsLog.length > 0) {
         response.actionsLog.forEach((log) => addLog(log));
       }
 
+      // Add assistant message
+      if (response.agentMessage) {
+        addMessage('assistant', response.agentMessage, {
+          pendingAction: response.pendingAction,
+          actionExecuted: response.actionExecuted,
+          executionResult: response.executionResult,
+        });
+      }
+
+      // Track pending action
+      if (response.pendingAction) {
+        setPendingAction(response.pendingAction);
+        addLog('Wacht op bevestiging...');
+      } else if (response.actionExecuted) {
+        setPendingAction(null);
+        if (response.executionResult?.success) {
+          addLog('Actie succesvol uitgevoerd!');
+        }
+      } else {
+        // For conversation or cancel, clear pending action
+        if (response.intent?.type === 'cancel_action') {
+          setPendingAction(null);
+        }
+      }
+
       // Play audio response if available
       if (response.audio) {
-        addLog('🔊 Audio response afspelen...');
+        addLog('Audio response afspelen...');
         try {
           await playAudioFromResponse(response.audio);
-          addLog('✅ Audio afgespeeld');
+          addLog('Audio afgespeeld');
         } catch (audioErr) {
-          addLog('⚠️ Kon audio niet afspelen');
+          addLog('Kon audio niet afspelen');
         }
       }
 
@@ -66,28 +122,30 @@ export default function Home() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Er ging iets mis';
       setError(errorMessage);
-      addLog(`❌ Fout: ${errorMessage}`);
+      addLog(`Fout: ${errorMessage}`);
       setRecordingState('idle');
     }
-  }, [addLog]);
+  }, [addLog, addMessage]);
 
-  const handleClearLogs = () => {
+  const handleClearChat = () => {
+    setMessages([]);
     setLogs([]);
+    setPendingAction(null);
   };
 
   const handleReset = () => {
-    setUserTranscript('');
-    setAgentMessage('');
+    setMessages([]);
     setLogs([]);
     setError(null);
+    setPendingAction(null);
     setRecordingState('idle');
   };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Header Section */}
-        <header className="text-center mb-12">
+        <header className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-3">
             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-4 rounded-2xl">
               <svg
@@ -127,35 +185,106 @@ export default function Home() {
           </div>
         )}
 
+        {/* Pending Action Banner */}
+        {pendingAction && (
+          <div className="mb-6 bg-amber-500/10 border border-amber-500/50 rounded-xl p-4 flex items-center gap-3">
+            <span className="text-xl">⏳</span>
+            <p className="flex-1 text-amber-200">
+              Er wacht een actie op bevestiging. Zeg <strong className="text-amber-100">"ja"</strong> om te bevestigen of <strong className="text-amber-100">"nee"</strong> om te annuleren.
+            </p>
+          </div>
+        )}
+
+        {/* Chat Container */}
+        <div className="backdrop-blur-sm bg-white/5 border border-emerald-500/20 rounded-2xl mb-6 overflow-hidden">
+          {/* Chat Messages */}
+          <div className="h-[400px] overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center">
+                <div className="text-6xl mb-4">💬</div>
+                <p className="text-gray-300 text-lg mb-2">Start een gesprek met LifeAdmin!</p>
+                <p className="text-gray-500 text-sm max-w-md">
+                  Druk op de microfoonknop en zeg iets zoals "Hoi" of "Wat kun je allemaal?"
+                </p>
+              </div>
+            ) : (
+              messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {message.role === 'assistant' && (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0">
+                      <span className="text-lg">🤖</span>
+                    </div>
+                  )}
+                  <div
+                    className={`max-w-[70%] rounded-2xl p-4 ${
+                      message.role === 'user'
+                        ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white'
+                        : 'bg-gray-700/50 text-gray-200'
+                    }`}
+                  >
+                    <p className="leading-relaxed">{message.content}</p>
+
+                    {/* Execution result badge */}
+                    {message.actionExecuted && message.executionResult && (
+                      <div className={`mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                        message.executionResult.success
+                          ? 'bg-green-500/20 text-green-300'
+                          : 'bg-red-500/20 text-red-300'
+                      }`}>
+                        {message.executionResult.success ? '✓ Uitgevoerd' : '✗ Mislukt'}
+                      </div>
+                    )}
+
+                    {/* Pending action badge */}
+                    {message.pendingAction && (
+                      <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-500/20 text-amber-300">
+                        ⏳ Wacht op bevestiging
+                      </div>
+                    )}
+                  </div>
+                  {message.role === 'user' && (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center flex-shrink-0">
+                      <span className="text-lg">👤</span>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
         {/* Microphone Button */}
-        <div className="flex justify-center mb-12">
+        <div className="flex flex-col items-center mb-8">
           <MicButton
             recordingState={recordingState}
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecording}
           />
+          {recordingState === 'processing' && (
+            <p className="mt-3 text-emerald-400 animate-pulse">Verwerken...</p>
+          )}
+          {recordingState === 'recording' && (
+            <p className="mt-3 text-red-400 animate-pulse">Opname actief...</p>
+          )}
         </div>
 
-        {/* Two-Column Chat Panels */}
-        <TranscriptPanel
-          userTranscript={userTranscript}
-          agentMessage={agentMessage}
-          isProcessing={recordingState === 'processing'}
-        />
-
         {/* Action Log Section */}
-        <div className="mt-8">
+        <div className="mb-8">
           <ActionLog logs={logs} />
         </div>
 
         {/* Button Section */}
-        <div className="mt-8 flex justify-center gap-4">
+        <div className="flex justify-center gap-4">
           <button
-            onClick={handleClearLogs}
+            onClick={handleClearChat}
             className="group flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gray-700 to-gray-800 border border-emerald-500/20 rounded-xl text-gray-200 hover:text-emerald-400 hover:border-emerald-500/40 transition-all duration-300"
           >
             <Trash2 className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
-            <span>Logs wissen</span>
+            <span>Gesprek wissen</span>
           </button>
           <button
             onClick={handleReset}

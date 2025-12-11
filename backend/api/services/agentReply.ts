@@ -6,6 +6,7 @@ import { Intent, ExecutionResult } from "../types";
 
 /**
  * Build a response message based on the intent and execution result
+ * This is used for action execution results, not for conversations
  */
 export function buildMessage(
   transcript: string,
@@ -16,23 +17,24 @@ export function buildMessage(
 
   // Error case
   if (!executionResult.success) {
-    return buildErrorMessage(type, task.target_url, executionResult.error);
+    return buildErrorMessage(type, task?.target_url || "onbekend", executionResult.error);
   }
 
-  // Success cases
-  switch (type) {
-    case "book_appointment":
-      return buildAppointmentMessage(task, executionResult);
-
-    case "fill_form_once":
-      return buildFormMessage(task, executionResult);
-
-    case "create_recurring_task":
+  // For action_request type, build appropriate success message
+  if (type === "action_request" && task) {
+    if (task.recurring) {
       return buildRecurringTaskMessage(task, executionResult);
-
-    default:
-      return "Ik heb je opdracht uitgevoerd.";
+    }
+    if (task.kind === "booking") {
+      return buildAppointmentMessage(task, executionResult);
+    }
+    if (task.kind === "form_fill") {
+      return buildFormMessage(task, executionResult);
+    }
   }
+
+  // Default success message
+  return "Ik heb je opdracht uitgevoerd.";
 }
 
 /**
@@ -42,6 +44,8 @@ function buildAppointmentMessage(
   task: Intent["task"],
   result: ExecutionResult
 ): string {
+  if (!task) return "Je afspraak is geboekt.";
+
   const serviceName = getServiceName(task.target_url);
   const dateTime = task.datetime_preference || "een beschikbaar moment";
 
@@ -59,6 +63,8 @@ function buildFormMessage(
   task: Intent["task"],
   result: ExecutionResult
 ): string {
+  if (!task) return "Het formulier is ingevuld.";
+
   const formName = getFormName(task.target_url);
 
   if (result.confirmationText) {
@@ -75,6 +81,8 @@ function buildRecurringTaskMessage(
   task: Intent["task"],
   result: ExecutionResult
 ): string {
+  if (!task) return "De terugkerende taak is aangemaakt.";
+
   const label = task.label || getServiceName(task.target_url);
   const intervalText = intervalToHuman(task.interval || "P3M");
 
@@ -143,12 +151,8 @@ function getActionName(intentType: string, targetUrl: string): string {
   const service = getServiceName(targetUrl);
 
   switch (intentType) {
-    case "book_appointment":
-      return `boeken van je ${service} afspraak`;
-    case "fill_form_once":
-      return `invullen van het ${getFormName(targetUrl)}`;
-    case "create_recurring_task":
-      return `aanmaken van de terugkerende taak`;
+    case "action_request":
+      return `uitvoeren van je ${service} opdracht`;
     default:
       return `uitvoeren van je opdracht`;
   }
