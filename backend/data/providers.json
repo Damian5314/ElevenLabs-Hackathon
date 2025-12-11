@@ -1,0 +1,78 @@
+{
+  "tandarts": [
+    {
+      "id": "tandarts-1",
+      "name": "Tandartspraktijk De Witte Tand",
+      "address": "Hoofdstraat 123, Amsterdam",
+      "phone": "020-1234567",
+      "rating": 4.8,
+      "reviewCount": 124,
+      "availableSlots": ["ochtend", "middag"],
+      "nextAvailable": "morgen",
+      "specialties": ["Algemene tandheelkunde", "Cosmetische behandelingen"],
+      "image": "🦷"
+    },
+    {
+      "id": "tandarts-2",
+      "name": "Dental Care Plus",
+      "address": "Keizersgracht 456, Amsterdam",
+      "phone": "020-7654321",
+      "rating": 4.6,
+      "reviewCount": 89,
+      "availableSlots": ["ochtend", "middag", "avond"],
+      "nextAvailable": "vandaag",
+      "specialties": ["Implantaten", "Orthodontie", "Algemene tandheelkunde"],
+      "image": "🏥"
+    },
+    {
+      "id": "tandarts-3",
+      "name": "Tandarts Van der Berg",
+      "address": "Prinsengracht 789, Amsterdam",
+      "phone": "020-9876543",
+      "rating": 4.9,
+      "reviewCount": 201,
+      "availableSlots": ["ochtend"],
+      "nextAvailable": "overmorgen",
+      "specialties": ["Kindertandheelkunde", "Angstpatiënten"],
+      "image": "😊"
+    },
+    {
+      "id": "tandarts-4",
+      "name": "MediDent Kliniek",
+      "address": "Vondelstraat 321, Amsterdam",
+      "phone": "020-1112233",
+      "rating": 4.5,
+      "reviewCount": 67,
+      "availableSlots": ["middag", "avond"],
+      "nextAvailable": "morgen",
+      "specialties": ["Wortelkanaalbehandeling", "Kronen en bruggen"],
+      "image": "⭐"
+    },
+    {
+      "id": "tandarts-5",
+      "name": "Smile Studio Amsterdam",
+      "address": "Damrak 55, Amsterdam",
+      "phone": "020-4445566",
+      "rating": 4.7,
+      "reviewCount": 156,
+      "availableSlots": ["ochtend", "middag"],
+      "nextAvailable": "volgende week",
+      "specialties": ["Tanden bleken", "Cosmetische tandheelkunde"],
+      "image": "✨"
+    }
+  ],
+  "huisarts": [
+    {
+      "id": "huisarts-1",
+      "name": "Huisartsenpraktijk Centrum",
+      "address": "Nieuwmarkt 10, Amsterdam",
+      "phone": "020-2223344",
+      "rating": 4.4,
+      "reviewCount": 312,
+      "availableSlots": ["ochtend", "middag"],
+      "nextAvailable": "morgen",
+      "specialties": ["Algemene geneeskunde"],
+      "image": "🏠"
+    }
+  ]
+}

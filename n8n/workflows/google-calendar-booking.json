@@ -1,0 +1,86 @@
+{
+  "name": "LifeAdmin - Google Calendar Booking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lifeadmin-booking",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Booking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "lifeadmin-booking"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "title": "={{ $json.title }}",
+        "start": "={{ $json.startDateTime }}",
+        "end": "={{ $json.endDateTime }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "location": "={{ $json.location }}",
+          "colorId": "9"
+        }
+      },
+      "id": "google-calendar",
+      "name": "Add to Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [500, 300],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "JOUW_CREDENTIAL_ID",
+          "name": "Google Calendar Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [750, 300]
+    }
+  ],
+  "connections": {
+    "Booking Webhook": {
+      "main": [
+        [
+          {
+            "node": "Add to Google Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Google Calendar": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

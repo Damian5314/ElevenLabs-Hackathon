@@ -9,6 +9,8 @@ import commandRoutes from "./routes/command";
 import checkWorkflowsRoutes from "./routes/checkWorkflows";
 import profileRoutes from "./routes/profile";
 import workflowsRoutes from "./routes/workflows";
+import reportResultRoutes from "./routes/reportResult";
+import playwrightRoutes from "./routes/playwright";
 
 const app: Application = express();
 
@@ -75,11 +77,24 @@ app.use("/api/command", commandRoutes);
 // Workflow scheduler endpoint (for n8n)
 app.use("/api/check-workflows", checkWorkflowsRoutes);
 
+// Alias for check-due-workflows (uses same logic as /api/workflows/check-due)
+app.get("/api/check-due-workflows", (req: Request, res: Response) => {
+  // Redirect to workflows check-due endpoint
+  req.url = "/check-due";
+  workflowsRoutes(req, res, () => {});
+});
+
 // Profile management
 app.use("/api/profile", profileRoutes);
 
 // Workflow management
 app.use("/api/workflows", workflowsRoutes);
+
+// Report result endpoint (for n8n and external services)
+app.use("/api/report-result", reportResultRoutes);
+
+// Playwright automation endpoints
+app.use("/playwright", playwrightRoutes);
 
 // ----- Error Handling -----
 

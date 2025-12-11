@@ -15,15 +15,21 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // ----- Type Definitions -----
 export type IntentType =
   | "conversation"
-  | "action_request"
+  | "search_providers"
+  | "select_provider"
+  | "select_datetime"
   | "confirm_action"
   | "cancel_action";
 
 export interface IntentTask {
   /** The kind of task to execute */
   kind: "booking" | "form_fill";
-  /** Target URL/page for the automation (e.g., "tandarts" or "event") */
-  target_url: string;
+  /** Provider category (e.g., "tandarts", "huisarts") */
+  provider_type: string;
+  /** Specific provider ID if selected */
+  provider_id?: string;
+  /** Search query for finding providers */
+  search_query?: string;
   /** ISO-like interval string for recurring tasks (e.g., "P3M" = every 3 months) */
   interval?: string;
   /** Whether to use profile data (name, email, phone) */
@@ -32,6 +38,8 @@ export interface IntentTask {
   label?: string;
   /** Date/time preference (e.g., "next_morning", "2024-01-15", "volgende week") */
   datetime_preference?: string;
+  /** Specific time slot selected */
+  time_slot?: string;
   /** Whether this is a recurring task */
   recurring?: boolean;
 }
@@ -39,12 +47,14 @@ export interface IntentTask {
 export interface Intent {
   /** The type of intent detected */
   type: IntentType;
-  /** Details of the task to execute (only for action_request) */
+  /** Details of the task to execute */
   task?: IntentTask;
   /** Conversational response (for conversation type) */
   response?: string;
   /** Topic being discussed */
   topic?: string;
+  /** Selection number (1, 2, 3, etc.) or "beste" for auto-select */
+  selection?: string | number;
 }
 
 // ----- Error Classes -----
@@ -59,31 +69,52 @@ export class IntentParseError extends Error {
 }
 
 // ----- System Prompt -----
-const SYSTEM_PROMPT = `Je bent LifeAdmin, een vriendelijke en behulpzame AI assistent. Je kunt ZOWEL normale gesprekken voeren ALS taken uitvoeren.
+const SYSTEM_PROMPT = `Je bent LifeAdmin, een vriendelijke en behulpzame AI assistent. Je helpt gebruikers met het zoeken en boeken van afspraken.
 
-BELANGRIJK: Je bent EERST een conversatie partner, en PAS wanneer de gebruiker EXPLICIET vraagt om een actie uit te voeren, stel je dit voor.
-
-LifeAdmin kan helpen met:
-- Tandartsafspraken boeken
-- Formulieren invullen (events, inschrijvingen)
-- Terugkerende taken instellen (bijv. elke 3 maanden een controle)
-- Algemene vragen beantwoorden en gesprekken voeren
+BELANGRIJK: Je bent EERST een conversatie partner. Je helpt de gebruiker door de juiste flow:
+1. Eerst zoeken naar providers (tandarts, huisarts, etc.)
+2. Dan een provider kiezen
+3. Dan datum/tijd kiezen
+4. Dan bevestigen
 
 INTENT TYPES:
-1. "conversation" - Voor normale gesprekken, vragen, informatie, of wanneer de gebruiker NIET expliciet een actie vraagt
-2. "action_request" - ALLEEN wanneer de gebruiker EXPLICIET vraagt om iets te DOEN (boeken, inschrijven, instellen)
-3. "confirm_action" - Wanneer de gebruiker "ja", "doe maar", "bevestig", "akkoord" zegt
-4. "cancel_action" - Wanneer de gebruiker "nee", "stop", "annuleer", "niet doen" zegt
+1. "conversation" - Normale gesprekken, vragen, begroetingen
+2. "search_providers" - Wanneer gebruiker vraagt om te zoeken naar een tandarts/huisarts/etc.
+3. "select_provider" - Wanneer gebruiker een specifieke provider kiest (nummer of naam)
+4. "select_datetime" - Wanneer gebruiker een datum/tijd kiest
+5. "confirm_action" - Wanneer gebruiker "ja", "doe maar", "bevestig" zegt
+6. "cancel_action" - Wanneer gebruiker "nee", "stop", "annuleer" zegt
 
-KRITIEKE REGELS VOOR INTENT DETECTIE:
-- Praten OVER iets ≠ actie uitvoeren. "Vertel me over tandarts afspraken" = conversation
-- Vragen stellen = conversation. "Hoe werkt het boeken?" = conversation
-- Expliciet verzoek = action_request. "Boek een afspraak", "Maak een afspraak", "Ik wil boeken" = action_request
-- Bij TWIJFEL: kies ALTIJD "conversation" en geef een behulpzaam antwoord
+ZOEK TRIGGERS (gebruik ALTIJD search_providers, NOOIT conversation):
+- "Zoek een tandarts"
+- "Ik zoek een tandarts"
+- "Vind een tandarts voor me"
+- "Welke tandartsen zijn er"
+- "Ik wil een tandartsafspraak maken" → search_providers!
+- "Boek een tandarts" → search_providers!
+- "Ik moet naar de tandarts" → search_providers!
+- "Kun je een tandarts zoeken" → search_providers!
+- "Kun je een tandartsafspraak maken" → search_providers!
+- "Maak een afspraak bij de tandarts" → search_providers!
+- "Regel een tandarts voor me" → search_providers!
+- "tandarts in Amsterdam" → search_providers!
+- ELKE vraag over tandarts/huisarts/dokter afspraak maken → search_providers!
 
-BESCHIKBARE ACTIES (alleen voor action_request):
-- target_url: "tandarts" - voor tandarts/medische afspraken
-- target_url: "event" - voor event inschrijvingen en formulieren
+BELANGRIJK: Als iemand vraagt om een afspraak te MAKEN/BOEKEN/REGELEN,
+return ALTIJD type "search_providers" - NIET "conversation"!
+De response mag NIET "ik ga zoeken" zeggen - dat gebeurt automatisch.
+
+SELECTIE TRIGGERS (gebruik select_provider):
+- "Nummer 1" / "De eerste" / "1"
+- "Nummer 2" / "De tweede" / "2"
+- "De beste" / "Kies de beste" / "Kies jij maar"
+- Naam van provider: "Tandartspraktijk De Witte Tand"
+
+DATUM/TIJD TRIGGERS (gebruik select_datetime):
+- "Morgen om 10 uur"
+- "Volgende week maandag"
+- "De eerste slot"
+- "9:30"
 
 VOORBEELDEN:
 
@@ -91,133 +122,144 @@ Input: "Hoi"
 Output:
 {
   "type": "conversation",
-  "response": "Hoi! Ik ben LifeAdmin, je persoonlijke assistent. Ik kan je helpen met het boeken van afspraken, formulieren invullen, en meer. Waar kan ik je mee helpen?",
+  "response": "Hoi! Ik ben LifeAdmin, je persoonlijke assistent. Ik kan je helpen met het zoeken en boeken van afspraken bij bijvoorbeeld de tandarts. Waar kan ik je mee helpen?",
   "topic": "greeting"
+}
+
+Input: "Ik zoek een tandarts"
+Output:
+{
+  "type": "search_providers",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts"
+  },
+  "topic": "tandarts"
+}
+
+Input: "Zoek een tandarts in de buurt"
+Output:
+{
+  "type": "search_providers",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts",
+    "search_query": "in de buurt"
+  },
+  "topic": "tandarts"
+}
+
+Input: "Ik wil een tandartsafspraak maken"
+Output:
+{
+  "type": "search_providers",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts"
+  },
+  "topic": "tandarts"
+}
+
+Input: "Boek een tandarts voor me"
+Output:
+{
+  "type": "search_providers",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts"
+  },
+  "topic": "tandarts"
+}
+
+Input: "Kun je voor mij een tandartsafspraak maken in Amsterdam?"
+Output:
+{
+  "type": "search_providers",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts",
+    "search_query": "Amsterdam"
+  },
+  "topic": "tandarts"
+}
+
+Input: "Regel een tandarts voor me" of "Maak een tandarts afspraak"
+Output:
+{
+  "type": "search_providers",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts"
+  },
+  "topic": "tandarts"
+}
+
+Input: "Nummer 2" of "De tweede"
+Output:
+{
+  "type": "select_provider",
+  "selection": 2
+}
+
+Input: "Kies de beste" of "Kies jij maar"
+Output:
+{
+  "type": "select_provider",
+  "selection": "beste"
+}
+
+Input: "Dental Care Plus"
+Output:
+{
+  "type": "select_provider",
+  "selection": "Dental Care Plus"
+}
+
+Input: "Morgen om 10 uur"
+Output:
+{
+  "type": "select_datetime",
+  "task": {
+    "kind": "booking",
+    "provider_type": "tandarts",
+    "datetime_preference": "morgen",
+    "time_slot": "10:00"
+  }
+}
+
+Input: "De eerste beschikbare"
+Output:
+{
+  "type": "select_datetime",
+  "selection": "eerste"
+}
+
+Input: "Ja" of "Ja, doe maar" of "Bevestig"
+Output:
+{
+  "type": "confirm_action",
+  "response": "Ik ga de afspraak voor je boeken..."
+}
+
+Input: "Nee" of "Annuleer" of "Stop"
+Output:
+{
+  "type": "cancel_action",
+  "response": "Geen probleem, ik heb geannuleerd. Kan ik je ergens anders mee helpen?"
 }
 
 Input: "Wat kun je allemaal?"
 Output:
 {
   "type": "conversation",
-  "response": "Ik kan je helpen met verschillende taken! Bijvoorbeeld tandartsafspraken boeken, je inschrijven voor evenementen, of terugkerende herinneringen instellen. Ik kan ook gewoon kletsen en je vragen beantwoorden. Wat wil je doen?",
+  "response": "Ik kan je helpen met het zoeken en boeken van afspraken! Zeg bijvoorbeeld 'zoek een tandarts' en ik laat je de beste opties zien. Je kunt dan kiezen en ik regel de rest.",
   "topic": "capabilities"
 }
-
-Input: "Ik moet naar de tandarts"
-Output:
-{
-  "type": "conversation",
-  "response": "Ah, je moet naar de tandarts! Wil je dat ik een afspraak voor je boek? Ik kan dat direct regelen als je wilt.",
-  "topic": "tandarts"
-}
-
-Input: "Vertel me over tandartsafspraken"
-Output:
-{
-  "type": "conversation",
-  "response": "Ik kan tandartsafspraken voor je boeken! Het proces is simpel: ik vul automatisch je gegevens in en kies een geschikt tijdstip. Wil je dat ik er een voor je boek?",
-  "topic": "tandarts"
-}
-
-Input: "Ja, boek maar een afspraak"
-Output:
-{
-  "type": "action_request",
-  "task": {
-    "kind": "booking",
-    "target_url": "tandarts",
-    "use_profile": true
-  },
-  "topic": "tandarts"
-}
-
-Input: "Boek een tandartsafspraak voor volgende week"
-Output:
-{
-  "type": "action_request",
-  "task": {
-    "kind": "booking",
-    "target_url": "tandarts",
-    "use_profile": true,
-    "datetime_preference": "volgende week"
-  },
-  "topic": "tandarts"
-}
-
-Input: "Ik wil me inschrijven voor het event"
-Output:
-{
-  "type": "action_request",
-  "task": {
-    "kind": "form_fill",
-    "target_url": "event",
-    "use_profile": true
-  },
-  "topic": "event"
-}
-
-Input: "Zorg dat ik elke 6 maanden een tandartscontrole heb"
-Output:
-{
-  "type": "action_request",
-  "task": {
-    "kind": "booking",
-    "target_url": "tandarts",
-    "interval": "P6M",
-    "use_profile": true,
-    "label": "Halfjaarlijkse tandartscontrole",
-    "recurring": true
-  },
-  "topic": "tandarts"
-}
-
-Input: "Ja doe maar" of "Ja" of "Oké" of "Bevestig"
-Output:
-{
-  "type": "confirm_action",
-  "response": "Ik ga de actie uitvoeren..."
-}
-
-Input: "Nee" of "Stop" of "Annuleer" of "Niet doen"
-Output:
-{
-  "type": "cancel_action",
-  "response": "Geen probleem, ik heb de actie geannuleerd. Kan ik je ergens anders mee helpen?"
-}
-
-Input: "Hoe laat is het?"
-Output:
-{
-  "type": "conversation",
-  "response": "Ik heb helaas geen toegang tot de huidige tijd, maar je kunt die vast zien op je telefoon of computer! Kan ik je ergens anders mee helpen?",
-  "topic": "general"
-}
-
-INTERVAL FORMAAT (voor recurring tasks):
-- "P1W" = elke week
-- "P1M" = elke maand
-- "P3M" = elke 3 maanden
-- "P6M" = elke 6 maanden
-- "P1Y" = elk jaar
 
 GEEF ALLEEN GELDIGE JSON TERUG.`;
 
 // ----- Main Export -----
-/**
- * Extracts structured intent from user text using GPT.
- *
- * @param text - The transcribed user command (Dutch or English)
- * @returns Promise<Intent> - Structured intent object
- * @throws IntentParseError - If parsing fails or API returns invalid JSON
- *
- * @example
- * ```ts
- * const intent = await extractIntent("Maak een tandartsafspraak");
- * console.log(intent.type); // "book_appointment"
- * console.log(intent.task.target_url); // "tandarts"
- * ```
- */
-export async function extractIntent(text: string): Promise<Intent> {
+export async function extractIntent(text: string, context?: { hasProviders?: boolean; hasSelectedProvider?: boolean }): Promise<Intent> {
   if (!OPENAI_API_KEY) {
     throw new IntentParseError("OPENAI_API_KEY is not set");
   }
@@ -228,16 +270,24 @@ export async function extractIntent(text: string): Promise<Intent> {
 
   console.log(`[IntentParser] Parsing: "${text}"`);
 
+  // Add context to help with intent detection
+  let contextHint = "";
+  if (context?.hasProviders && !context?.hasSelectedProvider) {
+    contextHint = "\n\nCONTEXT: De gebruiker heeft net een lijst met providers gezien. Als ze een nummer of naam noemen, is dat waarschijnlijk een select_provider intent.";
+  } else if (context?.hasSelectedProvider) {
+    contextHint = "\n\nCONTEXT: De gebruiker heeft een provider gekozen en ziet nu beschikbare tijdslots. Als ze een tijd of dag noemen, is dat waarschijnlijk een select_datetime intent.";
+  }
+
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Fast and cost-effective for hackathon
+      model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: SYSTEM_PROMPT + contextHint },
         { role: "user", content: text },
       ],
-      temperature: 0.1, // Low temperature for consistent JSON output
+      temperature: 0.1,
       max_tokens: 500,
       response_format: { type: "json_object" },
     });
@@ -250,39 +300,30 @@ export async function extractIntent(text: string): Promise<Intent> {
 
     console.log(`[IntentParser] Raw GPT response: ${rawResponse}`);
 
-    // Parse and validate JSON
     const parsed = JSON.parse(rawResponse);
 
-    // Validate required fields
     if (!parsed.type) {
-      throw new IntentParseError(
-        "Missing required field: type",
-        rawResponse
-      );
+      throw new IntentParseError("Missing required field: type", rawResponse);
     }
 
-    // Build intent based on type
     const intent: Intent = {
       type: parsed.type as IntentType,
       response: parsed.response,
       topic: parsed.topic,
+      selection: parsed.selection,
     };
 
-    // Only add task for action_request type
-    if (parsed.type === "action_request" && parsed.task) {
-      if (!parsed.task.kind || !parsed.task.target_url) {
-        throw new IntentParseError(
-          "Missing required task fields (kind or target_url) for action_request",
-          rawResponse
-        );
-      }
+    if (parsed.task) {
       intent.task = {
-        kind: parsed.task.kind,
-        target_url: parsed.task.target_url,
+        kind: parsed.task.kind || "booking",
+        provider_type: parsed.task.provider_type || "tandarts",
+        provider_id: parsed.task.provider_id,
+        search_query: parsed.task.search_query,
         interval: parsed.task.interval,
         use_profile: parsed.task.use_profile ?? true,
         label: parsed.task.label,
         datetime_preference: parsed.task.datetime_preference,
+        time_slot: parsed.task.time_slot,
         recurring: parsed.task.recurring ?? false,
       };
     }
@@ -302,25 +343,22 @@ export async function extractIntent(text: string): Promise<Intent> {
 }
 
 // ----- Helper Functions -----
-/**
- * Generates a human-readable description of the intent for logging/UI.
- */
 export function describeIntent(intent: Intent): string {
-  const { type, task, topic } = intent;
+  const { type, task, topic, selection } = intent;
 
   switch (type) {
     case "conversation":
       return `Gesprek over: ${topic || "algemeen"}`;
-    case "action_request":
-      if (!task) return "Actie verzoek";
-      if (task.recurring) {
-        return `Terugkerende taak: ${task.label || task.target_url} (${task.interval})`;
-      }
-      return `${task.kind === "booking" ? "Afspraak boeken" : "Formulier invullen"} bij ${task.target_url}${task.datetime_preference ? ` (${task.datetime_preference})` : ""}`;
+    case "search_providers":
+      return `Zoeken naar: ${task?.provider_type || "providers"}`;
+    case "select_provider":
+      return `Provider selectie: ${selection}`;
+    case "select_datetime":
+      return `Datum/tijd selectie: ${task?.datetime_preference || selection}`;
     case "confirm_action":
-      return "Bevestiging van actie";
+      return "Bevestiging";
     case "cancel_action":
-      return "Annulering van actie";
+      return "Annulering";
     default:
       return `Intent: ${type}`;
   }

@@ -10,15 +10,26 @@ import { bookDentistAppointment } from "../../automation/dentistBooking";
 import { fillEventForm } from "../../automation/eventForm";
 
 // ----- Configuration -----
-// Dummy sites are now served from the same Express server
 const DUMMY_SITES_BASE_URL =
   process.env.DUMMY_SITES_URL || "http://localhost:3001";
+
+// Task interface for the new booking flow
+interface BookingTask {
+  kind: "booking" | "form_fill";
+  provider_type: string;
+  provider_id?: string;
+  datetime_preference?: string;
+  use_profile?: boolean;
+}
 
 /**
  * Main executor function - routes to specific task handlers
  */
-export async function runTask(task: IntentTask): Promise<ExecutionResult> {
-  console.log(`[Executor] Running task: ${task.kind} on ${task.target_url}`);
+export async function runTask(task: IntentTask | BookingTask): Promise<ExecutionResult> {
+  // Handle both old (target_url) and new (provider_type) task formats
+  const targetType = (task as any).provider_type || (task as any).target_url || "unknown";
+
+  console.log(`[Executor] Running task: ${task.kind} on ${targetType}`);
 
   const profile = task.use_profile !== false ? getProfile() : null;
 
@@ -31,7 +42,9 @@ export async function runTask(task: IntentTask): Promise<ExecutionResult> {
   }
 
   try {
-    switch (task.target_url.toLowerCase()) {
+    const lowerTarget = targetType.toLowerCase();
+
+    switch (lowerTarget) {
       case "tandarts":
       case "dentist":
         return await executeDentistBooking(task, profile);
@@ -42,8 +55,8 @@ export async function runTask(task: IntentTask): Promise<ExecutionResult> {
       default:
         return {
           success: false,
-          message: `Unknown target: ${task.target_url}`,
-          error: `No automation available for target: ${task.target_url}`,
+          message: `Unknown target: ${targetType}`,
+          error: `No automation available for target: ${targetType}`,
         };
     }
   } catch (error) {
@@ -63,7 +76,7 @@ export async function runTask(task: IntentTask): Promise<ExecutionResult> {
  * Execute dentist booking via Playwright
  */
 async function executeDentistBooking(
-  task: IntentTask,
+  task: IntentTask | BookingTask,
   profile: { name: string; email: string; phone: string }
 ): Promise<ExecutionResult> {
   console.log("[Executor] Executing dentist booking...");
@@ -89,7 +102,7 @@ async function executeDentistBooking(
  * Execute event form via Playwright
  */
 async function executeEventForm(
-  task: IntentTask,
+  task: IntentTask | BookingTask,
   profile: { name: string; email: string; phone: string }
 ): Promise<ExecutionResult> {
   console.log("[Executor] Executing event form...");
@@ -97,7 +110,7 @@ async function executeEventForm(
   const result = await fillEventForm(
     {
       profile,
-      eventName: task.label,
+      eventName: (task as IntentTask).label,
       headless: process.env.HEADLESS !== "false",
     },
     DUMMY_SITES_BASE_URL
@@ -112,9 +125,8 @@ async function executeEventForm(
 }
 
 /**
- * Cleanup function (no-op since automation scripts manage their own browsers)
+ * Cleanup function
  */
 export async function closeBrowser(): Promise<void> {
-  // The automation scripts handle browser lifecycle themselves
   console.log("[Executor] Cleanup called (no-op)");
 }

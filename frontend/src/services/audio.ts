@@ -4,11 +4,15 @@
 
 let mediaRecorder: MediaRecorder | null = null;
 let audioChunks: Blob[] = [];
+let currentAudio: HTMLAudioElement | null = null;
 
 /**
  * Start recording audio from the microphone
  */
 export async function startRecording(): Promise<void> {
+  // Stop any playing audio first
+  stopAudio();
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -68,9 +72,30 @@ export function isRecording(): boolean {
 }
 
 /**
+ * Check if audio is currently playing
+ */
+export function isPlaying(): boolean {
+  return currentAudio !== null && !currentAudio.paused;
+}
+
+/**
+ * Stop currently playing audio
+ */
+export function stopAudio(): void {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+}
+
+/**
  * Play audio from base64 string or URL
  */
 export async function playAudioFromResponse(audioData: string): Promise<void> {
+  // Stop any currently playing audio
+  stopAudio();
+
   return new Promise((resolve, reject) => {
     try {
       let audioUrl: string;
@@ -90,22 +115,28 @@ export async function playAudioFromResponse(audioData: string): Promise<void> {
         audioUrl = URL.createObjectURL(audioBlob);
       }
 
-      const audio = new Audio(audioUrl);
+      currentAudio = new Audio(audioUrl);
 
-      audio.onended = () => {
+      currentAudio.onended = () => {
         // Clean up blob URL if we created one
         if (!audioData.startsWith('http')) {
           URL.revokeObjectURL(audioUrl);
         }
+        currentAudio = null;
         resolve();
       };
 
-      audio.onerror = (e) => {
+      currentAudio.onerror = (e) => {
+        currentAudio = null;
         reject(new Error('Kon audio niet afspelen'));
       };
 
-      audio.play().catch(reject);
+      currentAudio.play().catch((err) => {
+        currentAudio = null;
+        reject(err);
+      });
     } catch (error) {
+      currentAudio = null;
       reject(error);
     }
   });

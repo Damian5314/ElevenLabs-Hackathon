@@ -73,7 +73,12 @@ function parseServerResponse(data: any): CommandResponse {
     actionsLog: Array.isArray(data.actionsLog) ? data.actionsLog : [],
     audio: data.audio || '',
     intent: data.intent,
-    pendingAction: data.pendingAction,
+    // Booking flow data
+    providers: data.providers,
+    selectedProvider: data.selectedProvider,
+    availableSlots: data.availableSlots,
+    bookingSession: data.bookingSession,
+    // Action state
     actionExecuted: data.actionExecuted,
     executionResult: data.executionResult,
   };

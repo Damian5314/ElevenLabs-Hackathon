@@ -6,7 +6,7 @@
 
 import { getDueWorkflows, updateWorkflowLastRun } from "../services/database";
 import { runTask } from "../services/executor";
-import { CheckWorkflowsResponse, Workflow, IntentTask } from "../types";
+import { CheckWorkflowsResponse } from "../types";
 
 /**
  * Check and execute all due workflows
@@ -24,13 +24,13 @@ export async function runScheduledTasks(): Promise<CheckWorkflowsResponse> {
     console.log(`[Scheduler] Executing workflow: ${workflow.id}`);
 
     try {
-      // Convert workflow to IntentTask format
-      const task: IntentTask = {
+      // Convert workflow to task format for executor
+      const task = {
         kind: workflow.type,
-        target_url: workflow.target_url,
-        use_profile: workflow.use_profile,
-        interval: workflow.interval,
-        label: workflow.label,
+        provider_type: workflow.target_url || workflow.kind || "tandarts",
+        use_profile: workflow.use_profile ?? true,
+        interval: workflow.interval || "P3M",
+        label: workflow.label || "",
       };
 
       // Execute the task
@@ -41,7 +41,7 @@ export async function runScheduledTasks(): Promise<CheckWorkflowsResponse> {
 
       executedWorkflows.push({
         id: workflow.id,
-        target_url: workflow.target_url,
+        target_url: workflow.target_url || "",
         ranAt: now.toISOString(),
         result,
       });
@@ -56,7 +56,7 @@ export async function runScheduledTasks(): Promise<CheckWorkflowsResponse> {
 
       executedWorkflows.push({
         id: workflow.id,
-        target_url: workflow.target_url,
+        target_url: workflow.target_url || "",
         ranAt: now.toISOString(),
         result: {
           success: false,
