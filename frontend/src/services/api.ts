@@ -73,6 +73,9 @@ function parseServerResponse(data: any): CommandResponse {
     actionsLog: Array.isArray(data.actionsLog) ? data.actionsLog : [],
     audio: data.audio || '',
     intent: data.intent,
+    pendingAction: data.pendingAction,
+    actionExecuted: data.actionExecuted,
+    executionResult: data.executionResult,
   };
 }
 
