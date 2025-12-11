@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { Trash2, RotateCcw } from 'lucide-react';
 import MicButton from '@/components/MicButton';
 import TranscriptPanel from '@/components/TranscriptPanel';
 import ActionLog from '@/components/ActionLog';
@@ -83,60 +84,88 @@ export default function Home() {
   };
 
   return (
-    <main className="main-container">
-      {/* Header */}
-      <header className="header">
-        <div className="logo">
-          <span className="logo-icon">🎙️</span>
-          <h1>LifeAdmin</h1>
-        </div>
-        <p className="tagline">Jouw persoonlijke voice-powered life admin assistent</p>
-      </header>
+    <main className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        {/* Header Section */}
+        <header className="text-center mb-12">
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-4 rounded-2xl">
+              <svg
+                className="w-8 h-8 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                />
+              </svg>
+            </div>
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+              LifeAdmin
+            </h1>
+          </div>
+          <p className="text-xl text-gray-300">
+            Jouw persoonlijke voice-powered life admin assistent
+          </p>
+        </header>
 
-      {/* Error display */}
-      {error && (
-        <div className="error-banner">
-          <span>⚠️</span>
-          <p>{error}</p>
-          <button onClick={() => setError(null)} className="error-close">×</button>
-        </div>
-      )}
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-6 bg-red-500/10 border border-red-500/50 rounded-xl p-4 flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <p className="flex-1 text-red-200">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-200 hover:text-red-100 text-2xl leading-none transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
-      {/* Main content */}
-      <div className="content">
-        {/* Mic button section */}
-        <section className="mic-section">
+        {/* Microphone Button */}
+        <div className="flex justify-center mb-12">
           <MicButton
             recordingState={recordingState}
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecording}
           />
-        </section>
+        </div>
 
-        {/* Transcript panels */}
-        <section className="transcript-section">
-          <TranscriptPanel
-            userTranscript={userTranscript}
-            agentMessage={agentMessage}
-            isProcessing={recordingState === 'processing'}
-          />
-        </section>
+        {/* Two-Column Chat Panels */}
+        <TranscriptPanel
+          userTranscript={userTranscript}
+          agentMessage={agentMessage}
+          isProcessing={recordingState === 'processing'}
+        />
 
-        {/* Action log */}
-        <section className="log-section">
+        {/* Action Log Section */}
+        <div className="mt-8">
           <ActionLog logs={logs} />
-        </section>
-      </div>
+        </div>
 
-      {/* Footer with controls */}
-      <footer className="footer">
-        <button onClick={handleClearLogs} className="footer-btn">
-          🗑️ Logs wissen
-        </button>
-        <button onClick={handleReset} className="footer-btn">
-          🔄 Reset
-        </button>
-      </footer>
+        {/* Button Section */}
+        <div className="mt-8 flex justify-center gap-4">
+          <button
+            onClick={handleClearLogs}
+            className="group flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gray-700 to-gray-800 border border-emerald-500/20 rounded-xl text-gray-200 hover:text-emerald-400 hover:border-emerald-500/40 transition-all duration-300"
+          >
+            <Trash2 className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
+            <span>Logs wissen</span>
+          </button>
+          <button
+            onClick={handleReset}
+            className="group flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gray-700 to-gray-800 border border-emerald-500/20 rounded-xl text-gray-200 hover:text-emerald-400 hover:border-emerald-500/40 transition-all duration-300"
+          >
+            <RotateCcw className="w-5 h-5 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-180" />
+            <span>Reset</span>
+          </button>
+        </div>
+      </div>
     </main>
   );
 }

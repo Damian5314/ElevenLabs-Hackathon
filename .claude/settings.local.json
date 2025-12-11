@@ -6,7 +6,9 @@
       "Bash(touch:*)",
       "Bash(find:*)",
       "Bash(cat:*)",
-      "Bash(git -C /mnt/c/Users/Wish/Downloads/github-repo/hackathons/ElevenLabs/lifeadmin-voice-agent submodule status)"
+      "Bash(git -C /mnt/c/Users/Wish/Downloads/github-repo/hackathons/ElevenLabs/lifeadmin-voice-agent submodule status)",
+      "Bash(cd /mnt/c/Users/Hicha/Elevenlabs-hackathon/backend && npm run build:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

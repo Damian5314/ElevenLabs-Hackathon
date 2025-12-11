@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { ClipboardList } from 'lucide-react';
 
 interface ActionLogProps {
   logs: string[];
@@ -14,50 +15,65 @@ export default function ActionLog({ logs }: ActionLogProps) {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  const getLogIcon = (log: string): string => {
-    const lowerLog = log.toLowerCase();
-    if (lowerLog.includes('intent')) return '🎯';
-    if (lowerLog.includes('stt') || lowerLog.includes('transcript')) return '🎤';
-    if (lowerLog.includes('tts') || lowerLog.includes('audio')) return '🔊';
-    if (lowerLog.includes('formulier') || lowerLog.includes('form')) return '📝';
-    if (lowerLog.includes('workflow') || lowerLog.includes('opgeslagen')) return '💾';
-    if (lowerLog.includes('afspraak') || lowerLog.includes('appointment')) return '📅';
-    if (lowerLog.includes('error') || lowerLog.includes('fout')) return '❌';
-    if (lowerLog.includes('success') || lowerLog.includes('bevestigd')) return '✅';
-    if (lowerLog.includes('playwright') || lowerLog.includes('browser')) return '🌐';
-    return '📋';
-  };
-
   return (
-    <div className="action-log">
-      <div className="log-header">
-        <span className="log-icon">📋</span>
-        <h3>Actielog</h3>
+    <div className="backdrop-blur-sm bg-white/5 border border-emerald-500/20 rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 p-4 border-b border-emerald-500/20">
+        <div className="p-2 bg-gradient-to-br from-pink-500/20 to-rose-500/20 rounded-lg">
+          <ClipboardList className="w-5 h-5 text-pink-400" />
+        </div>
+        <h3 className="font-semibold text-gray-200">Actielog</h3>
       </div>
-      <div className="log-content">
+
+      {/* Content */}
+      <div className="p-5 max-h-64 overflow-y-auto custom-scrollbar">
         {logs.length === 0 ? (
-          <p className="log-placeholder">
-            Nog geen acties uitgevoerd...
-          </p>
+          <p className="text-gray-500 italic">Nog geen acties uitgevoerd...</p>
         ) : (
-          <ul className="log-list">
+          <ul className="space-y-2">
             {logs.map((log, index) => (
-              <li key={index} className="log-item">
-                <span className="log-item-icon">{getLogIcon(log)}</span>
-                <span className="log-item-text">{log}</span>
-                <span className="log-item-time">
-                  {new Date().toLocaleTimeString('nl-NL', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                  })}
-                </span>
+              <li
+                key={index}
+                className="flex items-start gap-3 text-sm text-gray-300 animate-fade-in"
+              >
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mt-2 flex-shrink-0"></span>
+                <span className="flex-1">{log}</span>
               </li>
             ))}
             <div ref={logEndRef} />
           </ul>
         )}
       </div>
+
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(16, 185, 129, 0.3);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(16, 185, 129, 0.5);
+        }
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(-4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
