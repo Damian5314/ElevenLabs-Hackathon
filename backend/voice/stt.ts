@@ -82,7 +82,7 @@ async function transcribeWithElevenLabs(audioBuffer: Buffer): Promise<string> {
       );
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as { text?: string };
     return data.text?.trim() || "";
   } catch (error) {
     if (error instanceof STTError) throw error;

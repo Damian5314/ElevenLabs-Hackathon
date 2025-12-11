@@ -2,8 +2,8 @@
  * Handle Command Controller
  *
  * Main orchestrator for voice commands:
- * 1. STT: Audio � Text
- * 2. Intent: Text � Intent JSON
+ * 1. STT: Audio -> Text
+ * 2. Intent: Text -> Intent JSON
  * 3. Execute: Run Playwright task or create workflow
  * 4. TTS: Generate audio response
  */
@@ -16,7 +16,7 @@ import {
 } from "../../voice";
 import { runTask } from "../services/executor";
 import { buildMessage } from "../services/agentReply";
-import { createWorkflow } from "../services/database";
+import { createWorkflow, updateWorkflowLastRun } from "../services/database";
 import { CommandResponse, Intent } from "../types";
 
 /**
@@ -29,28 +29,27 @@ export async function handleAudioCommand(
 
   try {
     // Step 1: Speech-to-Text
-    actionsLog.push("<� STT: Transcriberen van audio...");
+    actionsLog.push("STT: Transcriberen van audio...");
     const userTranscript = await transcribeAudio(audioBuffer);
-    actionsLog.push(` STT voltooid: "${userTranscript}"`);
+    actionsLog.push(`STT voltooid: "${userTranscript}"`);
 
     // Step 2: Extract Intent
-    actionsLog.push(">� Intent: Analyseren van opdracht...");
+    actionsLog.push("Intent: Analyseren van opdracht...");
     const intent = await extractIntent(userTranscript);
-    actionsLog.push(` Intent: ${intent.type} � ${intent.task.target_url}`);
+    actionsLog.push(`Intent: ${intent.type} -> ${intent.task.target_url}`);
 
     // Step 3: Execute based on intent type
     const executionResult = await executeIntent(intent, actionsLog);
 
     // Step 4: Build agent response message
     const agentMessage = buildMessage(userTranscript, intent, executionResult);
-    actionsLog.push(`=� Agent: "${agentMessage.substring(0, 50)}..."`);
+    actionsLog.push(`Agent: "${agentMessage.substring(0, 50)}..."`);
 
     // Step 5: Generate TTS audio
-    actionsLog.push("=
- TTS: Genereren van spraak...");
+    actionsLog.push("TTS: Genereren van spraak...");
     const audioResponseBuffer = await generateSpeech(agentMessage);
     const audioBase64 = audioBufferToBase64(audioResponseBuffer);
-    actionsLog.push(" TTS voltooid");
+    actionsLog.push("TTS voltooid");
 
     return {
       userTranscript,
@@ -62,7 +61,7 @@ export async function handleAudioCommand(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    actionsLog.push(`L Fout: ${errorMessage}`);
+    actionsLog.push(`Fout: ${errorMessage}`);
 
     // Generate error response with TTS
     const errorAgentMessage = `Er ging iets mis bij het verwerken van je opdracht. ${errorMessage}`;
@@ -97,26 +96,25 @@ export async function handleTextCommand(
   const actionsLog: string[] = [];
 
   try {
-    actionsLog.push(`=� Direct tekst input: "${text}"`);
+    actionsLog.push(`Direct tekst input: "${text}"`);
 
     // Skip STT, go straight to intent extraction
-    actionsLog.push(">� Intent: Analyseren van opdracht...");
+    actionsLog.push("Intent: Analyseren van opdracht...");
     const intent = await extractIntent(text);
-    actionsLog.push(` Intent: ${intent.type} � ${intent.task.target_url}`);
+    actionsLog.push(`Intent: ${intent.type} -> ${intent.task.target_url}`);
 
     // Execute based on intent type
     const executionResult = await executeIntent(intent, actionsLog);
 
     // Build agent response message
     const agentMessage = buildMessage(text, intent, executionResult);
-    actionsLog.push(`=� Agent: "${agentMessage.substring(0, 50)}..."`);
+    actionsLog.push(`Agent: "${agentMessage.substring(0, 50)}..."`);
 
     // Generate TTS audio
-    actionsLog.push("=
- TTS: Genereren van spraak...");
+    actionsLog.push("TTS: Genereren van spraak...");
     const audioResponseBuffer = await generateSpeech(agentMessage);
     const audioBase64 = audioBufferToBase64(audioResponseBuffer);
-    actionsLog.push(" TTS voltooid");
+    actionsLog.push("TTS voltooid");
 
     return {
       userTranscript: text,
@@ -128,7 +126,7 @@ export async function handleTextCommand(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    actionsLog.push(`L Fout: ${errorMessage}`);
+    actionsLog.push(`Fout: ${errorMessage}`);
 
     const errorAgentMessage = `Er ging iets mis: ${errorMessage}`;
 
@@ -159,27 +157,27 @@ export async function handleTextCommand(
 async function executeIntent(
   intent: Intent,
   actionsLog: string[]
-): Promise<{ success: boolean; confirmationText?: string; error?: string }> {
+): Promise<{ success: boolean; message: string; confirmationText?: string; error?: string }> {
   const { type, task } = intent;
 
   switch (type) {
     case "book_appointment":
     case "fill_form_once":
       // Execute immediately via Playwright
-      actionsLog.push(`> Playwright: Uitvoeren van ${task.kind}...`);
+      actionsLog.push(`Playwright: Uitvoeren van ${task.kind}...`);
       const result = await runTask(task);
 
       if (result.success) {
-        actionsLog.push(` Taak voltooid: ${result.confirmationText}`);
+        actionsLog.push(`Taak voltooid: ${result.confirmationText}`);
       } else {
-        actionsLog.push(`L Taak mislukt: ${result.error}`);
+        actionsLog.push(`Taak mislukt: ${result.error}`);
       }
 
       return result;
 
     case "create_recurring_task":
       // Create workflow in database
-      actionsLog.push(`=� Workflow aanmaken: ${task.label || task.target_url}`);
+      actionsLog.push(`Workflow aanmaken: ${task.label || task.target_url}`);
 
       const workflow = createWorkflow({
         type: task.kind,
@@ -189,27 +187,31 @@ async function executeIntent(
         use_profile: task.use_profile,
       });
 
-      actionsLog.push(` Workflow opgeslagen met ID: ${workflow.id}`);
+      actionsLog.push(`Workflow opgeslagen met ID: ${workflow.id}`);
 
       // Also execute the task immediately for demo purposes
-      actionsLog.push(`> Eerste uitvoering starten...`);
+      actionsLog.push("Eerste uitvoering starten...");
       const firstRunResult = await runTask(task);
 
       if (firstRunResult.success) {
-        actionsLog.push(` Eerste uitvoering voltooid`);
+        actionsLog.push("Eerste uitvoering voltooid");
+        // Update last_run to prevent duplicate execution by scheduler
+        updateWorkflowLastRun(workflow.id);
       } else {
-        actionsLog.push(`� Eerste uitvoering mislukt, workflow is wel aangemaakt`);
+        actionsLog.push("Eerste uitvoering mislukt, workflow is wel aangemaakt");
       }
 
       return {
         success: true,
+        message: "Workflow created and first run completed",
         confirmationText: firstRunResult.confirmationText,
       };
 
     default:
-      actionsLog.push(`� Onbekend intent type: ${type}`);
+      actionsLog.push(`Onbekend intent type: ${type}`);
       return {
         success: false,
+        message: "Unknown intent type",
         error: `Unknown intent type: ${type}`,
       };
   }
